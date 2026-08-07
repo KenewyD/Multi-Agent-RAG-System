@@ -61,7 +61,7 @@ streamlit run app.py
 
 ### Streamlit Cloud
 1. Push sur GitHub
-2. Connecter le repo sur [[share.streamlit.io](https://share.streamlit.io](https://multi-agent-rag-system-ld2zdcme86mfsxjk447rh9.streamlit.app/))]
+2. Voici le lien: https://multi-agent-rag-system-ld2zdcme86mfsxjk447rh9.streamlit.app/
 3. Déployer
 
 ---
