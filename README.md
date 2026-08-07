@@ -66,10 +66,6 @@ streamlit run app.py
 
 ---
 
-## 📝 Pour l'entretien
-
-> *"J'ai conçu un système multi-agent inspiré de LangGraph pour réduire les hallucinations. L'architecture comporte 4 agents spécialisés : Router, Recherche, Synthèse et Vérification. Sur un benchmark de 5 questions, le système multi-agent réduit les hallucinations de 79% par rapport à un RAG classique, passant d'un score de fiabilité de 62% à 92%."*
-
 ---
 
 **Auteur :** KENEWY DIALLO — AI Engineer | LLM, RAG & AWS
