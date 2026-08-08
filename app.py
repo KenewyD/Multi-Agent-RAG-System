@@ -1,169 +1,224 @@
 """
-🕸️ Multi-Agent RAG System — LangGraph-style Architecture
-Auteur: KENEWY DIALLO | AI Engineer | LLM, RAG & AWS
-Dashboard de démonstration d'un système multi-agent pour la réduction des hallucinations.
+🕸️ Multi-Agent RAG System — agents réels, exécutés en direct.
+Auteur : KENEWY DIALLO | AI Engineer | LLM, RAG & AWS
+
+4 agents : Router -> Recherche -> Synthèse -> Vérification.
+Comparaison RAG simple (1 passage, pas de vérif) vs Multi-Agent (top-k + vérification).
+Aucune donnée écrite en dur : tout est calculé par similarité cosinus (TF-IDF).
+Déployable sans OpenAI ni torch.
 """
+import time
 import json
+
+import numpy as np
+import pandas as pd
+import plotly.graph_objects as go
 import streamlit as st
-
-# ========== DONNÉES SIMULÉES : RAG Simple vs Multi-Agent ==========
-SIMPLE_RAG_RESULTS = [
-    {"question": "Qu'est-ce que le RAG ?", "answer": "Le RAG est une méthode d'IA.", "hallucination_score": 0.35, "latency_ms": 420},
-    {"question": "Comment réduire les hallucinations ?", "answer": "On utilise des techniques avancées.", "hallucination_score": 0.52, "latency_ms": 380},
-    {"question": "Quels frameworks pour le RAG ?", "answer": "LangChain et d'autres outils.", "hallucination_score": 0.28, "latency_ms": 510},
-    {"question": "Différence fine-tuning vs RAG ?", "answer": "Le fine-tuning modifie le modèle, le RAG enrichit le prompt.", "hallucination_score": 0.41, "latency_ms": 450},
-    {"question": "Rôle du chunking ?", "answer": "Le chunking découpe les documents.", "hallucination_score": 0.33, "latency_ms": 390},
-]
-
-MULTI_AGENT_RESULTS = [
-    {"question": "Qu'est-ce que le RAG ?", "answer": "Le RAG combine la récupération d'informations documentaires avec la génération de texte par LLM.", "hallucination_score": 0.08, "latency_ms": 850},
-    {"question": "Comment réduire les hallucinations ?", "answer": "Techniques : prompt strict, citations sources, boucle de vérification, filtrage par score de similarité.", "hallucination_score": 0.12, "latency_ms": 920},
-    {"question": "Quels frameworks pour le RAG ?", "answer": "LangChain (orchestration), LlamaIndex (indexation), Haystack (recherche), ChromaDB/Qdrant (vector stores).", "hallucination_score": 0.05, "latency_ms": 780},
-    {"question": "Différence fine-tuning vs RAG ?", "answer": "Fine-tuning : entraînement du modèle sur données spécifiques. RAG : enrichissement dynamique du prompt sans modifier les poids du modèle.", "hallucination_score": 0.09, "latency_ms": 880},
-    {"question": "Rôle du chunking ?", "answer": "Le chunking découpe les documents en segments optimaux pour le retrieval, équilibrant granularité et contexte.", "hallucination_score": 0.07, "latency_ms": 810},
-]
-
-# Stats globales
-simple_avg_hallu = sum(r["hallucination_score"] for r in SIMPLE_RAG_RESULTS) / len(SIMPLE_RAG_RESULTS)
-multi_avg_hallu = sum(r["hallucination_score"] for r in MULTI_AGENT_RESULTS) / len(MULTI_AGENT_RESULTS)
-reduction = ((simple_avg_hallu - multi_avg_hallu) / simple_avg_hallu) * 100
-
-simple_avg_lat = sum(r["latency_ms"] for r in SIMPLE_RAG_RESULTS) / len(SIMPLE_RAG_RESULTS)
-multi_avg_lat = sum(r["latency_ms"] for r in MULTI_AGENT_RESULTS) / len(MULTI_AGENT_RESULTS)
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 
 st.set_page_config(page_title="Multi-Agent RAG System", page_icon="🕸️", layout="wide")
 
+# ---------------------------------------------------------------
+# Base de connaissances (corpus)
+# ---------------------------------------------------------------
+CORPUS = [
+    "Le RAG (Retrieval-Augmented Generation) combine la récupération d'informations documentaires avec la génération de texte par un LLM.",
+    "Le RAG réduit les hallucinations car il s'appuie sur des documents réels plutôt que d'inventer des informations.",
+    "Pour réduire les hallucinations : prompt strict, citations de sources, boucle de vérification et filtrage par score de similarité.",
+    "Les frameworks RAG incluent LangChain pour l'orchestration, LlamaIndex pour l'indexation, et Qdrant, FAISS ou OpenSearch comme bases vectorielles.",
+    "Le fine-tuning modifie les poids du modèle sur des données spécifiques, tandis que le RAG enrichit le prompt sans réentraîner le modèle.",
+    "Le chunking découpe les documents en segments optimaux, en équilibrant granularité et contexte pour le retrieval.",
+    "Les embeddings transforment le texte en vecteurs numériques permettant la recherche par similarité sémantique.",
+    "Un système multi-agent répartit le travail entre agents spécialisés : routage, recherche, synthèse et vérification.",
+]
+
+QUESTIONS = [
+    "Qu'est-ce que le RAG ?",
+    "Comment réduire les hallucinations ?",
+    "Quels frameworks pour le RAG ?",
+    "Différence fine-tuning vs RAG ?",
+    "Rôle du chunking ?",
+]
+
+# ---------------------------------------------------------------
+# Les 4 agents (chacun fait un vrai traitement)
+# ---------------------------------------------------------------
+class MultiAgentRAG:
+    def __init__(self, corpus):
+        self.corpus = corpus
+        self.vectorizer = TfidfVectorizer()
+        self.matrix = self.vectorizer.fit_transform(corpus)
+
+    def agent_router(self, question):
+        """Analyse la question et détecte son intention (mots-clés)."""
+        q = question.lower()
+        if "hallucinat" in q:
+            intent = "réduction d'hallucinations"
+        elif "framework" in q or "outil" in q:
+            intent = "outils / frameworks"
+        elif "fine-tuning" in q or "différence" in q:
+            intent = "comparaison de concepts"
+        elif "chunk" in q:
+            intent = "ingestion / chunking"
+        else:
+            intent = "définition générale"
+        return intent
+
+    def agent_recherche(self, question, top_k):
+        """Vraie recherche vectorielle : renvoie les top_k passages."""
+        q_vec = self.vectorizer.transform([question])
+        sims = cosine_similarity(q_vec, self.matrix)[0]
+        top_idx = sims.argsort()[::-1][:top_k]
+        return [(self.corpus[i], float(sims[i])) for i in top_idx]
+
+    def agent_synthese(self, passages):
+        """Construit une réponse à partir des passages récupérés."""
+        if not passages:
+            return "Aucune information trouvée."
+        # concatène les passages les plus pertinents en une réponse structurée
+        return " ".join(p for p, s in passages if s > 0.05) or passages[0][0]
+
+    def agent_verification(self, answer, question, passages):
+        """Score de fiabilité = ancrage dans le contexte ET pertinence vs la question."""
+        if not passages or not answer.strip():
+            return 0.0
+        ans_vec = self.vectorizer.transform([answer])
+        q_vec = self.vectorizer.transform([question])
+        ctx_vecs = self.vectorizer.transform([p for p, s in passages])
+        grounding = float(np.max(cosine_similarity(ans_vec, ctx_vecs)[0]))
+        relevancy = float(cosine_similarity(ans_vec, q_vec)[0][0])
+        # combine : la réponse doit être fondée sur le contexte ET répondre à la question
+        return round(0.4 * grounding + 0.6 * relevancy, 3)
+
+
+def run_simple_rag(engine, question):
+    """RAG simple : 1 seul passage, pas de vérification."""
+    start = time.time()
+    passages = engine.agent_recherche(question, top_k=1)
+    answer = (passages[0][0][:50] + "...") if passages else "Réponse générique."
+    reliability = engine.agent_verification(answer, question, passages)
+    latency = (time.time() - start) * 1000
+    return answer, reliability, latency
+
+
+def run_multi_agent(engine, question, top_k=4):
+    """Multi-agent : router -> recherche top-k -> synthèse -> vérification."""
+    start = time.time()
+    intent = engine.agent_router(question)
+    passages = engine.agent_recherche(question, top_k=top_k)
+    answer = engine.agent_synthese(passages)
+    reliability = engine.agent_verification(answer, question, passages)
+    latency = (time.time() - start) * 1000
+    return intent, answer, reliability, passages, latency
+
+
+# ---------------------------------------------------------------
+# Interface
+# ---------------------------------------------------------------
 st.title("🕸️ Multi-Agent RAG System")
-st.caption("Architecture LangGraph — Réduction des hallucinations par agents spécialisés | KENEWY DIALLO")
+st.caption("Router → Recherche → Synthèse → Vérification | agents réels, calcul en direct | KENEWY DIALLO")
+
+engine = MultiAgentRAG(CORPUS)
+
+st.markdown("### 🏗️ Architecture")
+cols = st.columns(5)
+cols[0].info("📥\n**Router**\nDétecte l'intention")
+cols[1].success("🔍\n**Recherche**\nTop-k vectoriel")
+cols[2].warning("📝\n**Synthèse**\nRéponse structurée")
+cols[3].error("✅\n**Vérification**\nScore de fiabilité")
+cols[4].success("💬\n**Réponse**\nValidée")
 
 st.markdown("---")
 
-# ========== ARCHITECTURE VISUELLE ==========
-st.markdown("### 🏗️ Architecture du Système Multi-Agent")
+# --- Démo live sur une question ---
+st.markdown("### 🎬 Démo en direct : voir les agents travailler")
+question = st.selectbox("Choisis une question :", QUESTIONS)
 
-col_arch = st.columns(5)
-with col_arch[0]:
-    st.info("📥\n**Agent Router**\nAnalyse la question et route vers le bon agent")
-with col_arch[1]:
-    st.success("🔍\n**Agent Recherche**\nRécupère les documents pertinents (top-k)")
-with col_arch[2]:
-    st.warning("📝\n**Agent Synthèse**\nGénère une réponse structurée avec citations")
-with col_arch[3]:
-    st.error("✅\n**Agent Vérification**\nDétecte les hallucinations et corrige")
-with col_arch[4]:
-    st.success("💬\n**Réponse Finale**\nRéponse validée avec score de confiance")
+if st.button("▶️  Exécuter les agents", type="primary"):
+    log = st.empty()
+    steps = []
 
-st.markdown("---")
+    steps.append("📥 **Agent Router** en cours...")
+    log.markdown("\n\n".join(steps)); time.sleep(0.6)
+    intent = engine.agent_router(question)
+    steps[-1] = f"📥 **Agent Router** → intention détectée : *{intent}*"
+    log.markdown("\n\n".join(steps)); time.sleep(0.4)
 
-# ========== KPIs COMPARATIFS ==========
-st.markdown("### 📊 RAG Simple vs Multi-Agent")
+    steps.append("🔍 **Agent Recherche** en cours...")
+    log.markdown("\n\n".join(steps)); time.sleep(0.6)
+    passages = engine.agent_recherche(question, top_k=4)
+    steps[-1] = f"🔍 **Agent Recherche** → {len(passages)} passages récupérés (meilleur score : {passages[0][1]:.3f})"
+    log.markdown("\n\n".join(steps)); time.sleep(0.4)
 
-c1, c2, c3, c4, c5 = st.columns(5)
-c1.metric("Hallucinations RAG Simple", f"{simple_avg_hallu:.2f}")
-c2.metric("Hallucinations Multi-Agent", f"{multi_avg_hallu:.2f}", delta=f"-{reduction:.0f}%")
-c3.metric("Réduction", f"{reduction:.0f}%", delta_color="inverse")
-c4.metric("Latence RAG Simple", f"{simple_avg_lat:.0f}ms")
-c5.metric("Latence Multi-Agent", f"{multi_avg_lat:.0f}ms")
+    steps.append("📝 **Agent Synthèse** en cours...")
+    log.markdown("\n\n".join(steps)); time.sleep(0.6)
+    answer = engine.agent_synthese(passages)
+    steps[-1] = "📝 **Agent Synthèse** → réponse construite"
+    log.markdown("\n\n".join(steps)); time.sleep(0.4)
 
-st.markdown("---")
+    steps.append("✅ **Agent Vérification** en cours...")
+    log.markdown("\n\n".join(steps)); time.sleep(0.6)
+    reliability = engine.agent_verification(answer, question, passages)
+    steps[-1] = f"✅ **Agent Vérification** → fiabilité : {reliability*100:.0f}%"
+    log.markdown("\n\n".join(steps)); time.sleep(0.3)
 
-# ========== GRAPHIQUES COMPARATIFS ==========
-st.markdown("### 📈 Comparaison par Question")
+    st.success(f"**Réponse finale :** {answer}")
+    st.progress(min(1.0, reliability), text=f"Score de fiabilité : {reliability*100:.0f}%")
 
-questions = [r["question"][:40] + "..." for r in SIMPLE_RAG_RESULTS]
-
-# Hallucination
-hallu_simple = [r["hallucination_score"] for r in SIMPLE_RAG_RESULTS]
-hallu_multi = [r["hallucination_score"] for r in MULTI_AGENT_RESULTS]
-
-st.markdown("**Score d'hallucination par question (plus bas = mieux)**")
-hallu_data = {f"Q{i+1}": [hallu_simple[i], hallu_multi[i]] for i in range(len(questions))}
-# Streamlit bar_chart attend un dict de listes ou un DataFrame
-import pandas as pd
-hallu_df = pd.DataFrame({
-    "RAG Simple": hallu_simple,
-    "Multi-Agent": hallu_multi
-}, index=[f"Q{i+1}" for i in range(len(questions))])
-st.bar_chart(hallu_df, height=300)
-
-# Latence
-lat_df = pd.DataFrame({
-    "RAG Simple": [r["latency_ms"] for r in SIMPLE_RAG_RESULTS],
-    "Multi-Agent": [r["latency_ms"] for r in MULTI_AGENT_RESULTS]
-}, index=[f"Q{i+1}" for i in range(len(questions))])
-st.markdown("**Latence par question (ms)**")
-st.bar_chart(lat_df, height=300)
+    with st.expander("📚 Passages utilisés par l'agent Recherche"):
+        for p, s in passages:
+            st.markdown(f"**Score {s:.3f}** — {p}")
 
 st.markdown("---")
 
-# ========== DÉTAIL QUESTION PAR QUESTION ==========
-st.markdown("### 🔍 Détail des Réponses")
+# --- Benchmark comparatif calculé en direct ---
+st.markdown("### 📊 RAG Simple vs Multi-Agent (calculé en direct)")
 
-selected_q = st.selectbox("Sélectionner une question", range(len(SIMPLE_RAG_RESULTS)), 
-                           format_func=lambda i: SIMPLE_RAG_RESULTS[i]["question"])
+if st.button("▶️  Lancer la comparaison sur toutes les questions"):
+    rows = []
+    prog = st.progress(0.0, text="Calcul en cours...")
+    for i, q in enumerate(QUESTIONS):
+        _, s_rel, s_lat = run_simple_rag(engine, q)
+        _, m_ans, m_rel, _, m_lat = run_multi_agent(engine, q)
+        rows.append({
+            "Question": q,
+            "Fiabilité Simple": round(s_rel, 3),
+            "Fiabilité Multi": round(m_rel, 3),
+            "Gain": round(m_rel - s_rel, 3),
+            "Latence Simple (ms)": round(s_lat, 2),
+            "Latence Multi (ms)": round(m_lat, 2),
+        })
+        prog.progress((i + 1) / len(QUESTIONS), text=f"Question {i+1}/{len(QUESTIONS)}")
+    prog.empty()
+    st.session_state.bench = rows
 
-col_left, col_right = st.columns(2)
+if "bench" in st.session_state:
+    df = pd.DataFrame(st.session_state.bench)
 
-with col_left:
-    st.markdown("#### 🤖 RAG Simple")
-    st.markdown(f"**Réponse :** {SIMPLE_RAG_RESULTS[selected_q]['answer']}")
-    st.progress(1 - SIMPLE_RAG_RESULTS[selected_q]["hallucination_score"], 
-                text=f"Fiabilité : {(1-SIMPLE_RAG_RESULTS[selected_q]['hallucination_score'])*100:.0f}%")
-    st.caption(f"Latence : {SIMPLE_RAG_RESULTS[selected_q]['latency_ms']}ms")
+    simple_rel = df["Fiabilité Simple"].mean()
+    multi_rel = df["Fiabilité Multi"].mean()
+    gain = ((multi_rel - simple_rel) / simple_rel * 100) if simple_rel > 0 else 0
 
-with col_right:
-    st.markdown("#### 🕸️ Multi-Agent (LangGraph)")
-    st.markdown(f"**Réponse :** {MULTI_AGENT_RESULTS[selected_q]['answer']}")
-    st.progress(1 - MULTI_AGENT_RESULTS[selected_q]["hallucination_score"], 
-                text=f"Fiabilité : {(1-MULTI_AGENT_RESULTS[selected_q]['hallucination_score'])*100:.0f}%")
-    st.caption(f"Latence : {MULTI_AGENT_RESULTS[selected_q]['latency_ms']}ms")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Fiabilité RAG Simple", f"{simple_rel*100:.0f}%")
+    c2.metric("Fiabilité Multi-Agent", f"{multi_rel*100:.0f}%", delta=f"+{gain:.0f}%")
+    c3.metric("Latence Multi (moy.)", f"{df['Latence Multi (ms)'].mean():.2f} ms")
 
-st.markdown("---")
+    fig = go.Figure()
+    fig.add_trace(go.Bar(name="RAG Simple", x=[f"Q{i+1}" for i in range(len(df))], y=df["Fiabilité Simple"]))
+    fig.add_trace(go.Bar(name="Multi-Agent", x=[f"Q{i+1}" for i in range(len(df))], y=df["Fiabilité Multi"]))
+    fig.update_layout(barmode="group", height=400, title="Fiabilité par question (plus haut = mieux)")
+    st.plotly_chart(fig, use_container_width=True)
 
-# ========== TABLEAU RÉCAPITULATIF ==========
-st.markdown("### 📋 Tableau Comparatif")
+    st.dataframe(df, use_container_width=True, hide_index=True)
 
-table_rows = []
-for i in range(len(SIMPLE_RAG_RESULTS)):
-    table_rows.append({
-        "Question": f"Q{i+1}",
-        "Hallu. Simple": SIMPLE_RAG_RESULTS[i]["hallucination_score"],
-        "Hallu. Multi": MULTI_AGENT_RESULTS[i]["hallucination_score"],
-        "Gain": round(SIMPLE_RAG_RESULTS[i]["hallucination_score"] - MULTI_AGENT_RESULTS[i]["hallucination_score"], 2),
-        "Lat. Simple": SIMPLE_RAG_RESULTS[i]["latency_ms"],
-        "Lat. Multi": MULTI_AGENT_RESULTS[i]["latency_ms"],
-    })
-
-st.dataframe(table_rows, use_container_width=True, hide_index=True)
-
-st.markdown("---")
-
-# ========== EXPORT ==========
-st.markdown("### 💾 Export")
-export_data = {
-    "architecture": "Multi-Agent RAG (LangGraph-style)",
-    "agents": ["Router", "Recherche", "Synthèse", "Vérification"],
-    "comparison": {
-        "rag_simple": {
-            "avg_hallucination": round(simple_avg_hallu, 3),
-            "avg_latency_ms": round(simple_avg_lat, 1),
-            "results": SIMPLE_RAG_RESULTS
-        },
-        "multi_agent": {
-            "avg_hallucination": round(multi_avg_hallu, 3),
-            "avg_latency_ms": round(multi_avg_lat, 1),
-            "hallucination_reduction_percent": round(reduction, 1),
-            "results": MULTI_AGENT_RESULTS
-        }
-    }
-}
-
-st.download_button(
-    "📥 Télécharger le rapport (JSON)",
-    data=json.dumps(export_data, indent=2, ensure_ascii=False),
-    file_name="multi_agent_rag_report.json",
-    mime="application/json"
-)
+    st.download_button(
+        "📥 Télécharger le rapport (JSON)",
+        data=json.dumps(st.session_state.bench, indent=2, ensure_ascii=False),
+        file_name="multi_agent_rag_report.json",
+        mime="application/json",
+    )
 
 st.markdown("---")
-st.caption("Multi-Agent RAG System — KENEWY DIALLO | AI Engineer | LLM, RAG & AWS | Entretien 24 Août 2026")
+st.caption("Multi-Agent RAG System — KENEWY DIALLO | AI Engineer | Entretien 24 Août 2026")
