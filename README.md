@@ -1,71 +1,62 @@
 # 🕸️ Multi-Agent RAG System
 
-> Système multi-agent inspiré de LangGraph pour la réduction des hallucinations dans les pipelines RAG.  
-> Dashboard comparatif : RAG Simple vs Architecture Multi-Agent.
+> Système RAG multi-agent (architecture inspirée de LangGraph) pour améliorer la qualité
+> et la fiabilité des réponses. Quatre agents spécialisés collaborent : **Router → Recherche → Synthèse → Vérification**.
 
 ---
 
-## 🎯 Objectif
+## 🚀 Démo en ligne
 
-Démontrer l'impact d'une architecture **multi-agent** (Router → Recherche → Synthèse → Vérification) sur la qualité des réponses générées par un système RAG.
+👉 **[Voir la démo en direct](https://REMPLACE-PAR-TON-URL.streamlit.app/)**
 
-**Résultat clé :** Réduction des hallucinations de **~80%** par rapport à un RAG classique.
+Chaque agent s'exécute **en direct** sous les yeux de l'utilisateur, avec un vrai calcul de
+recherche vectorielle (similarité cosinus) — aucune donnée n'est écrite en dur.
 
 ---
 
 ## 🏗️ Architecture
 
-```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│   Question  │────▶│    Router   │────▶│  Recherche  │────▶│   Synthèse  │────▶│ Vérification│
-│   Utilisateur│     │   (Routing) │     │  (Retrieval)│     │ (Generation)│     │(Fact-Check) │
-└─────────────┘     └─────────────┘     └─────────────┘     └─────────────┘     └──────┬──────┘
-                                                                                        │
-                                                                                        ▼
-                                                                                 ┌─────────────┐
-                                                                                 │   Réponse   │
-                                                                                 │   Finale    │
-                                                                                 └─────────────┘
-```
+| Agent | Rôle |
+|-------|------|
+| 📥 **Router** | Analyse la question et détecte son intention |
+| 🔍 **Recherche** | Recherche vectorielle top-k dans la base de connaissances |
+| 📝 **Synthèse** | Construit une réponse structurée à partir des passages récupérés |
+| ✅ **Vérification** | Calcule un score de fiabilité (ancrage dans le contexte + pertinence) |
 
-### Agents
-
-| Agent | Rôle | Technologie |
-|-------|------|-------------|
-| **Router** | Analyse la question et choisit la stratégie | LangGraph StateGraph |
-| **Recherche** | Récupère les documents pertinents (top-k) | FAISS + Embeddings |
-| **Synthèse** | Génère une réponse structurée avec citations | Claude-3 / GPT-4 |
-| **Vérification** | Détecte les hallucinations et corrige | Similarité cosinus + Règles |
+Le pipeline compare une approche **RAG simple** (un seul passage, pas de vérification) à
+l'approche **multi-agent** (top-k + synthèse + vérification), et mesure la différence de fiabilité.
 
 ---
 
-## 📊 Résultats
+## 🚀 Lancer en local
 
-| Métrique | RAG Simple | Multi-Agent | Gain |
-|----------|-----------|-------------|------|
-| Hallucination moyenne | 0.38 | 0.08 | **-79%** |
-| Fiabilité moyenne | 62% | 92% | **+48%** |
-| Latence moyenne | 430ms | 848ms | +97% |
-
-> 💡 **Trade-off** : La latence augmente (~2x) mais la qualité est massivement améliorée. Adapté aux cas où la précision prime sur la vitesse.
-
----
-
-## 🚀 Déploiement
-
-### Local
 ```bash
+git clone https://github.com/KenewyD/multi-agent-rag-system.git
+cd multi-agent-rag-system
 pip install -r requirements.txt
 streamlit run app.py
 ```
 
-### Streamlit Cloud
-1. Push sur GitHub
-2. Voici le lien: https://multi-agent-rag-system-ld2zdcme86mfsxjk447rh9.streamlit.app/
-3. Déployer
+Le dashboard s'ouvre sur `http://localhost:8501`.
 
 ---
 
+## 🧠 Points techniques
+
+- **Agents réels** : chaque agent exécute un traitement concret (routage par intention, recherche vectorielle TF-IDF, synthèse, vérification par similarité).
+- **Métrique de fiabilité honnête** : combinaison de l'ancrage de la réponse dans le contexte récupéré et de sa pertinence vis-à-vis de la question.
+- **Calcul en direct** : les scores sont recalculés à chaque exécution, rien n'est figé.
+- **Déployable partout** : fonctionne sans OpenAI ni GPU (scikit-learn uniquement).
+
 ---
 
-**Auteur :** KENEWY DIALLO — AI Engineer | LLM, RAG & AWS
+## 🛠️ Stack
+
+`Python` · `Streamlit` · `scikit-learn` · `Plotly` · architecture multi-agent
+
+---
+
+## 📝 Auteur
+
+**KENEWY DIALLO** — AI Engineer | LLM, RAG & AWS
+🔗 [LinkedIn](https://linkedin.com/in/kenewy-diallo) | 💻 [GitHub](https://github.com/KenewyD)
