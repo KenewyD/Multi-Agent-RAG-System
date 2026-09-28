@@ -7,7 +7,7 @@
 
 ## 🚀 Démo en ligne
 
-👉 **[Voir la démo en direct]([https://REMPLACE-PAR-TON-URL.streamlit.app/](https://multi-agent-rag-system-ld2zdcme86mfsxjk447rh9.streamlit.app/))**
+👉 **[Voir la démo en direct][([https://REMPLACE-PAR-TON-URL.streamlit.app/](https://multi-agent-rag-system-ld2zdcme86mfsxjk447rh9.streamlit.app/))](https://multi-agent-rag-system-cmnrkdpudhu4p5scg6appx6.streamlit.app/)**
 
 Chaque agent s'exécute **en direct** sous les yeux de l'utilisateur, avec un vrai calcul de
 recherche vectorielle (similarité cosinus) — aucune donnée n'est écrite en dur.
